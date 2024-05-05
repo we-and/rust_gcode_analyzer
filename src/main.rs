@@ -3,7 +3,8 @@ use async_std::io::{BufReader, prelude::*};
 use std::time::Instant;
 use async_std::io::{self,};
 use async_std::prelude::*;
-
+use std::env;
+use std::path::{PathBuf, Path};
 use std::collections::HashMap;
 use regex::Regex;
 
@@ -86,7 +87,7 @@ impl GcodeAnalyzer {
 
     fn process_line(&mut self, line: &str, total_lines: Option<usize>) {
         self.current_line_number += 1;
-
+        println!("Process line {}",line);
         let line = if line.starts_with(' ') { line.trim() } else { line };
         let first_space = line.find(' ').unwrap_or(line.len());
         let command = &line[0..first_space].split(';').next().unwrap().replace("\r", "").to_uppercase();
@@ -130,6 +131,22 @@ impl GcodeAnalyzer {
     }
 }
 
+
+fn to_absolute_path<P: AsRef<Path>>(relative_path: P) -> PathBuf {
+    match env::current_dir() {
+        Ok(current_dir) => {
+            let mut absolute_path = PathBuf::from(current_dir);
+            absolute_path.push(relative_path);
+            absolute_path
+        },
+        Err(_) => {
+            // Fallback to just returning the relative path as is if unable to fetch current directory
+            PathBuf::from(relative_path.as_ref()) 
+        }
+    }
+}
+
+
 enum FileType {
     Path,
     File,
@@ -146,11 +163,15 @@ struct FileAnalyzer {
 
 impl FileAnalyzer {
     async fn analyze(&self) {
+        println!("Analyze start...");
         let start_time = Instant::now();
 
         match &self.file {
             FileType::Path => {
-                if let Ok(file) = File::open("file_path_here.txt").await {
+        
+                let absolute_path = to_absolute_path(&self.file_path);
+                println!("Analyze from path. {}",absolute_path.display());
+                if let Ok(file) = File::open(&absolute_path).await {
                     let reader = BufReader::new(file);
                     let mut lines = reader.lines();
 
@@ -160,12 +181,18 @@ impl FileAnalyzer {
                             println!("Processing line: {}", line);
                         }
                     }
+                }else{
+                    println!("File not found");
+
                 }
             },
             FileType::File=>{
+                println!("Analyze from file.");
 
             },
             FileType::Array(strings) => {
+                println!("Analyze from array.");
+
                 for line in strings {
                     // Process line here
                     println!("Processing line: {}", line);
@@ -175,7 +202,8 @@ impl FileAnalyzer {
 
         let end_time = Instant::now();
         let duration = end_time.duration_since(start_time).as_millis();
-
+        println!("Analyze done...");
+        
         (self.done_callback)("Result from analysis".to_string(), duration);
     }
          
@@ -190,9 +218,9 @@ fn main() {
     // Setup the analyzer with callbacks and file type
     let analyzer = FileAnalyzer {
         file: FileType::Path,
-        file_path:"yourpath.txt".to_string(),
+        file_path:"gcode_example_files/square_layers.gcode".to_string(),
         progress_callback: Box::new(|progress| println!("Progress: {}%", progress)),
-        done_callback: Box::new(|result, time| println!("Done! Result: {}, Time: {}ms", result, time)),
+        done_callback: Box::new(|result, time| println!("Done. Result: {}, Time: {}ms", result, time)),
         error_callback: Box::new(|e| println!("Error: {}", e)),
     };
 
